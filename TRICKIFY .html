@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>⚡ Trickify — Math + File Tutor</title>
+
+<!-- Libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.0.0/docx.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/showdown/dist/showdown.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptx-parser@0.2.2/dist/pptx-parser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.0/dist/ffmpeg.min.js"></script>
+
+<style>
+:root { --bg:#0f1724; --panel:#0b1220; --accent:#2563eb; --text:#f0f4f8; }
+body {margin:0; height:100%; display:flex; flex-direction:column; font-family:system-ui,sans-serif; background:var(--bg); color:var(--text);}
+header {padding:10px; background:#111827; color:var(--text); font-weight:bold; text-align:center;}
+.chat-wrap {flex:1; display:flex; flex-direction:column; gap:8px; padding:10px; overflow-y:auto; margin-bottom:150px;}
+.bubble {max-width:80%; padding:12px 14px; border-radius:16px; line-height:1.5; white-space:pre-wrap;}
+.user {align-self:flex-end; background:var(--accent); color:white; border-bottom-right-radius:4px;}
+.bot {align-self:flex-start; background:#1f2937; color:white; border-bottom-left-radius:4px;}
+.toggle-bar {display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;}
+.toggle-bar button {cursor:pointer; padding:6px 10px; border-radius:6px; border:none; background:var(--accent); color:white;}
+.inputbar {display:flex; align-items:center; gap:8px; padding:10px; background:#111827; position:fixed; bottom:0; left:0; width:100%; box-sizing:border-box;}
+textarea {flex:1; padding:10px 14px; border-radius:18px; border:none; background:#1f2937; color:white; resize:none; min-height:48px; max-height:160px;}
+.send-btn {width:56px; height:56px; font-size:22px; display:flex; align-items:center; justify-content:center; background:var(--accent); color:white; border:none; border-radius:50%; cursor:pointer;}
+.plus-btn {width:46px; height:46px; font-size:22px; border-radius:50%; background:#374151; color:white; border:none; cursor:pointer;}
+.file-options {position:absolute; bottom:70px; left:10px; display:none; flex-direction:column; gap:6px; background:#1f2937; padding:8px; border-radius:10px;}
+.file-options button {background:#2563eb; border:none; color:white; padding:6px 8px; border-radius:6px; cursor:pointer;}
+.word3d {display:inline-block;text-shadow:1px 1px 0 #000,2px 2px 0 #444;transform: translateY(6px);opacity: 0;transition: transform 140ms ease, opacity 140ms ease;will-change: transform, opacity;}
+.plotly-graph-div {max-width:100%; margin-top:10px; border-radius:8px;}
+</style>
+</head>
+<body>
+<header>⚡ Trickify — Math + File Tutor</header>
+<div id="chat" class="chat-wrap"></div>
+
+<div class="inputbar">
+  <button class="plus-btn" id="plusBtn">＋</button>
+  <div class="file-options" id="fileOptions">
+    <button onclick="pickFile('filePdf')">📄 PDF</button>
+    <button onclick="pickFile('fileDoc')">📑 DOC/DOCX/TXT</button>
+    <button onclick="pickFile('filePpt')">📊 PPT</button>
+    <button onclick="pickFile('fileExcel')">📈 Excel</button>
+    <button onclick="pickFile('fileImg')">🖼️ Image (OCR)</button>
+    <button onclick="pickFile('fileAudio')">🎵 Audio</button>
+    <button onclick="pickFile('fileVideo')">🎥 Video</button>
+    <button onclick="doGoogleSearch()">🌐 Google Search</button>
+    <button onclick="fetchNews()">📰 Live News</button>
+  </div>
+  <textarea id="q" placeholder="Type your question here..."></textarea>
+  <button class="send-btn" id="send">➤</button>
+</div>
+
+<input type="file" id="filePdf" accept=".pdf" style="display:none">
+<input type="file" id="fileDoc" accept=".doc,.docx,.txt" style="display:none">
+<input type="file" id="filePpt" accept=".ppt,.pptx" style="display:none">
+<input type="file" id="fileExcel" accept=".xls,.xlsx" style="display:none">
+<input type="file" id="fileImg" accept="image/*" style="display:none">
+<input type="file" id="fileAudio" accept="audio/*" style="display:none">
+<input type="file" id="fileVideo" accept="video/*" style="display:none">
+
+<script>
+
+const chat=document.getElementById("chat");
+const qInput=document.getElementById("q");
+const sendBtn=document.getElementById("send");
+const plusBtn=document.getElementById("plusBtn");
+const fileOptions=document.getElementById("fileOptions");
+let conversations=[];
+let speechSynthesisActive=false;
+let lastAnswerText="";
+
+function addBubble(text,who="bot"){
+  const div=document.createElement("div");
+  div.className="bubble "+(who==="user"?"user":"bot");
+  div.innerHTML=text;
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+  return div;
+}
+
+// Typewriter
+async function typeWriterEffect(element,text,options={speed:20,markdown:true}){
+  element.style.whiteSpace='pre-wrap';
+  element.innerHTML="";
+  let html=text;
+  if(options.markdown && window.showdown){
+    if(!window._showdownConverter){ window._showdownConverter=new showdown.Converter({simplifiedAutoLink:true,tables:true}); }
+    html=window._showdownConverter.makeHtml(text);
+  }
+  const frag=document.createRange().createContextualFragment(html);
+  async function walk(srcNode,destContainer){
+    for(const child of Array.from(srcNode.childNodes)){
+      if(child.nodeType===Node.TEXT_NODE){
+        const tokens=child.textContent.match(/(\s+|[^\s]+)/g)||[];
+        for(const tok of tokens){
+          if(/^\s+$/.test(tok)){ destContainer.appendChild(document.createTextNode(tok)); }
+          else {
+            const span=document.createElement("span");
+            span.className="word3d"; span.textContent=tok;
+            destContainer.appendChild(span);
+            await new Promise(r=>setTimeout(r,options.speed));
+            span.style.opacity="1"; span.style.transform="translateY(0)";
+          }
+        }
+      } else if(child.nodeType===Node.ELEMENT_NODE){
+        const el=document.createElement(child.nodeName.toLowerCase());
+        for(const attr of Array.from(child.attributes||[])) el.setAttribute(attr.name,attr.value);
+        destContainer.appendChild(el);
+        await walk(child,el);
+      }
+    }
+  }
+  await walk(frag,element);
+}
+
+// Ask AI — Full Subjects Support
+async function askAI(query){
+  const placeholder = addBubble("🤖 Thinking...","bot");
+  let wolframResult = "";
+
+  // Wolfram alpha only for math/science related queries
+  try {
+    const wfRes = await fetch(`https://api.wolframalpha.com/v2/query?input=${encodeURIComponent(query)}&format=plaintext,mathml&output=JSON&appid=${WOLFRAM_APPID}`);
+    const wfJson = await wfRes.json();
+    if(wfJson.queryresult && wfJson.queryresult.pods){
+      wolframResult = wfJson.queryresult.pods.map(p=>p.subpods.map(s=>s.plaintext).join("\n")).join("\n\n");
+    }
+  } catch(e) { wolframResult = ""; }
+
+  // System prompt for ALL subjects
+  const messages = [
+    {role:"system", content: `
+You are a super-intelligent AI tutor capable of answering ANY subject:
+- Mathematics: step by step solutions
+- Physics/Chemistry/Biology: explain concepts & solve problems
+- History, Geography, Civics, Politics: give detailed factual explanations
+- Literature & Languages: analyze, summarize, write creatively
+- Programming & Tech: debug, explain, write code
+- Art, Music, Philosophy: explain, compose ideas, give examples
+- Economics, Business, Finance: analyze, explain, solve problems
+Always provide clear, detailed, easy-to-understand answers with examples if relevant.`},
+    {role:"user", content:`Query: ${query}\nWolfram Output:\n${wolframResult}`}
+  ];
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:"POST",
+      headers: {
+        "Content-Type":"application/json",
+        "Authorization":"Bearer "+OPENAI_API_KEY
+      },
+      body: JSON.stringify({model:"gpt-4o-mini", messages})
+    });
+    const j = await res.json();
+    const ans = j.choices?.[0]?.message?.content || "❌ No answer.";
+    placeholder.innerHTML = "";
+    await typeWriterEffect(placeholder, ans, {speed:20, markdown:true});
+    lastAnswerText = ans;
+    attachExportControls(placeholder, ans);
+    conversations.push({q: query, a: ans});
+  } catch(err) {
+    placeholder.innerHTML = "❌ AI failed to respond: " + err;
+  }
+}
+
+// Send button
+sendBtn.addEventListener("click",()=>{ const q=qInput.value.trim(); if(!q) return; addBubble(q,"user"); qInput.value=""; askAI(q); });
+
+// Merge Files
+async function mergeFiles(files){
+  if(!files || !files.length) return;
+  const file = files[0];
+  let content = "";
+  try {
+    if(file.type.includes("pdf")){
+      const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
+      for(let i=1;i<=pdf.numPages;i++){
+        const page = await pdf.getPage(i);
+        const text = await page.getTextContent();
+        content += text.items.map(t=>t.str).join(" ") + "\n";
+      }
+    }
+    else if(file.type.includes("word") || file.name.endsWith(".txt")){
+      content = await new Promise(r=>{
+        const reader = new FileReader();
+        reader.onload = e => r(e.target.result);
+        reader.readAsText(file);
+      });
+    }
+    else if(file.name.endsWith(".pptx") || file.name.endsWith(".ppt")){
+      const reader = new FileReader();
+      reader.onload = async (e)=>{
+        const pptData = e.target.result;
+        try{
+          const pptx = await PPTXParser.parse(pptData);
+          content="";
+          pptx.slides.forEach(s=>{ s.texts.forEach(t=>content+=t+"\n"); });
+        }catch(err){ content="❌ Error reading PPT: "+err; }
+        addBubble("📄 Extracted Content:\n"+content,"bot");
+        if(content) await askAI(content);
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+    else if(file.type.includes("excel") || file.name.endsWith(".xls") || file.name.endsWith(".xlsx")){
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data,{type:"array"});
+      content="";
+      wb.SheetNames.forEach(sn=>{ content+="Sheet: "+sn+"\n"; content+=XLSX.utils.sheet_to_csv(wb.Sheets[sn])+"\n"; });
+    }
+    else if(file.type.includes("image")){
+      const result = await Tesseract.recognize(file,"eng");
+      content = result.data.text;
+    }
+    else if(file.type.includes("audio")){
+      content="⚡ Audio transcription in progress...";
+      addBubble(content,"bot");
+      const transcript = await transcribeAudio(file);
+      content=transcript;
+    }
+    else if(file.type.includes("video")){
+      content="⚡ Video transcription in progress...";
+      addBubble(content,"bot");
+      const transcript = await transcribeVideo(file);
+      content=transcript;
+    }
+    else content="❌ Unsupported file type.";
+
+    addBubble("📄 Extracted Content:\n"+content,"bot");
+    if(content && !content.startsWith("⚡") && !content.startsWith("❌")) await askAI(content);
+
+  } catch(e){ addBubble("❌ Error reading file: "+e,"bot"); }
+}
+
+// File pickers
+["filePdf","fileDoc","filePpt","fileExcel","fileImg","fileAudio","fileVideo"].forEach(id=>{ document.getElementById(id).addEventListener("change",(e)=>mergeFiles(e.target.files)); });
+plusBtn.addEventListener("click",()=>{ fileOptions.style.display = fileOptions.style.display==="flex"?"none":"flex"; });
+function pickFile(id){ document.getElementById(id).click(); }
+
+// Google & News
+function doGoogleSearch(){ const query=prompt("Enter search query for Google:"); if(!query) return; window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`,"_blank"); }
+function fetchNews(){ const query=prompt("Enter topic for live news:"); if(!query) return; window.open(`https://news.google.com/search?q=${encodeURIComponent(query)}`,"_blank"); }
+
+// Export & Voice
+function attachExportControls(bubble, answerText){
+  lastAnswerText=answerText;
+  const ctr=document.createElement("div"); ctr.className="toggle-bar";
+  function makeBtn(label, cb){ const b=document.createElement("button"); b.textContent=label; b.onclick=cb; ctr.appendChild(b); }
+  makeBtn("📋 Copy", ()=>copyToClipboard(answerText));
+  makeBtn("⬇️ PDF", ()=>downloadAsPDF(answerText,"AI_Answer.pdf"));
+  makeBtn("⬇️ DOCX", ()=>downloadAsDocx(answerText,"AI_Answer.docx"));
+  makeBtn("⬇️ XLSX", ()=>downloadAsExcel(answerText,"AI_Answer.xlsx"));
+  makeBtn("⬇️ PPTX", ()=>downloadAsPptx(answerText,"AI_Answer.pptx"));
+  makeBtn("⬇️ ZIP", ()=>downloadAsZip(answerText));
+  makeBtn(speechSynthesisActive?"🔇 Voice Off":"🔊 Voice On", toggleVoice);
+  bubble.appendChild(ctr);
+}
+async function copyToClipboard(text){ try{await navigator.clipboard.writeText(text); alert("Copied ✅");} catch(e){let ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta); ta.select();document.execCommand("copy");ta.remove();alert("Copied ✅"); } }
+function downloadAsPDF(text, filename){ const { jsPDF } = window.jspdf; const doc=new jsPDF({unit:"pt",format:"a4"}); const lines=doc.splitTextToSize(text,550); doc.text(lines,40,40); doc.save(filename);}
+async function downloadAsDocx(text, filename){ const { Document,Packer,Paragraph,TextRun } = window.docx; const doc=new Document({sections:[{children:text.split(/\n+/).map(p=>new Paragraph({children:[new TextRun(p)]}))}]}); const blob=await Packer.toBlob(doc); saveAs(blob,filename);}
+function downloadAsExcel(text, filename){ const rows=text.split(/\r?\n/).map(r=>[r]); const ws=XLSX.utils.aoa_to_sheet([["AI Answer"],...rows]); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Sheet1"); const wbout=XLSX.write(wb,{bookType:"xlsx",type:"array"}); saveAs(new Blob([wbout],{type:"application/octet-stream"}),filename);}
+function downloadAsPptx(text, filename){ const pptx=new PptxGenJS(); const slide=pptx.addSlide(); slide.addText(text,{x:0.5,y:0.5,w:"90%",h:"80%",fontSize:18,wrap:true}); pptx.writeFile({fileName:filename});}
+async function downloadAsZip(text){ const zip=new JSZip(); zip.file("AI_Answer.txt",text); const blob=await zip.generateAsync({type:"blob"}); saveAs(blob,"AI_Answer_All.zip"); }
+function toggleVoice(){ speechSynthesisActive=!speechSynthesisActive; if(speechSynthesisActive) speakText(lastAnswerText); else speechSynthesis.cancel(); }
+function speakText(text){ if(!speechSynthesisActive) return; speechSynthesis.cancel(); const utter=new SpeechSynthesisUtterance(text); utter.lang="en-US"; utter.rate=1; speechSynthesis.speak(utter); }
+
+// Audio & Video transcription
+async function transcribeAudio(file){
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=()=>{ resolve("🎵 Audio transcription: [Simulated]"); };
+    reader.readAsArrayBuffer(file);
+  });
+}
+async function transcribeVideo(file){
+  return new Promise(resolve=>{
+    resolve("🎥 Video transcription: [Simulated]"); 
+  });
+}
+</script>
+</body>
+</html>
